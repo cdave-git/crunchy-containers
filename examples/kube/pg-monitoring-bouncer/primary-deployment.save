@@ -1,0 +1,185 @@
+
+{
+    "kind": "Service",
+    "apiVersion": "v1",
+    "metadata": {
+        "name": "primary-deployment",
+        "labels": {
+            "name": "primary-deployment"
+        }
+    },
+    "spec": {
+        "ports": [{
+            "name": "pgsql",
+            "protocol": "TCP",
+            "port": 5432,
+            "targetPort": 5432,
+            "nodePort": 0
+        }, {
+            "name": "node-exporter",
+            "protocol": "TCP",
+            "port": 9100,
+            "targetPort": 9100,
+            "nodePort": 0
+        }, {
+            "name": "postgres-exporter",
+            "protocol": "TCP",
+            "port": 9187,
+            "targetPort": 9187,
+            "nodePort": 0
+        }],
+        "selector": {
+            "name": "primary-deployment"
+        },
+        "type": "ClusterIP",
+        "sessionAffinity": "None"
+    }
+}
+
+
+{
+    "kind": "Deployment",
+    "apiVersion": "extensions/v1beta1",
+    "metadata": {
+        "name": "primary-deployment",
+        "labels": {
+            "name": "primary-deployment"
+        }
+    },
+    "spec": {
+        "replicas": 1,
+        "template": {
+            "metadata": {
+                "labels": {
+                    "name": "primary-deployment",
+                    "crunchy_collect": "true"
+                }
+            },
+            "spec": {
+                "containers": [{
+                    "name": "postgres",
+                    "image": "$CCP_IMAGE_PREFIX/crunchy-postgres:$CCP_IMAGE_TAG",
+                    "env": [{
+                        "name": "PG_PRIMARY_PORT",
+                        "value": "5432"
+                    }, {
+                        "name": "PG_MODE",
+                        "value": "primary"
+                    }, {
+                        "name": "PGDATA_PATH_OVERRIDE",
+                        "value": "primary-deployment"
+                    }, {
+                        "name": "PG_PRIMARY_USER",
+                        "value": "primaryuser"
+                    }, {
+                        "name": "PG_USER",
+                        "value": "testuser"
+                    }, {
+                        "name": "PG_DATABASE",
+                        "value": "userdb"
+                    }, {
+                        "name": "PGHOST",
+                        "value": "/tmp"
+                    }, {
+                        "name": "PG_PASSWORD",
+                        "valueFrom": {
+                            "secretKeyRef": {
+                                "name": "pgsql-secrets",
+                                "key": "pg-password"
+                            }
+                        }
+                    }, {
+                        "name": "PG_ROOT_PASSWORD",
+                        "valueFrom": {
+                            "secretKeyRef": {
+                                "name": "pgsql-secrets",
+                                "key": "pg-root-password"
+                            }
+                        }
+                    }, {
+                        "name": "PGBOUNCER_PASSWORD",
+                        "valueFrom": {
+                            "secretKeyRef": {
+                                "name": "pgbouncer-secrets",
+                                "key": "pgbouncer-password"
+                            }
+                        }
+                    }],
+                    "volumeMounts": [
+			        {
+                        "mountPath": "/pgbackrest",
+                        "name": "pgbackrest",
+                        "readOnly": false
+                    }, {
+                        "mountPath": "/pgwal",
+                        "name": "pgwal",
+                        "readOnly": false
+                    }, {
+                        "mountPath": "/pgdata",
+                        "name": "pgdata",
+                        "readOnly": false
+                    }, {
+                        "mountPath": "/pgconf",
+                        "name": "primary-deployment-pgconf"
+                    } ],
+
+                    "ports": [{
+                        "containerPort": 5432,
+                        "protocol": "TCP"
+                    }],
+                    "resources": {},
+                    "imagePullPolicy": "IfNotPresent"
+                }],
+                "volumes": [
+		{
+                    "name": "pgwal",
+            		"persistentVolumeClaim": {
+                		"claimName": "primary-deployment-pgwal"
+            		}
+                },{
+                    "name": "pgbackrest",
+            		"persistentVolumeClaim": {
+                		"claimName": "primary-deployment-pgbackrest"
+            		}
+                },{
+                    "name": "pgdata",
+            		"persistentVolumeClaim": {
+                		"claimName": "primary-deployment-pgdata"
+            		}
+                }, {
+                "name": "primary-deployment-pgconf",
+                "configMap": {
+                    "name": "primary-deployment-pgconf",
+                    "items": [{
+                        "key": "setup.sql",
+                        "path": "setup.sql"
+                    }, {
+                        "key": "postgresql.conf",
+                        "path": "postgresql.conf"
+                    }, {
+                        "key": "pghba",
+                        "path": "pg_hba.conf"
+                    }]
+                }
+            }
+
+		],
+
+                "restartPolicy": "Always",
+                "terminationGracePeriodSeconds": 30,
+                "dnsPolicy": "ClusterFirst",
+                "securityContext": {
+			$CCP_SECURITY_CONTEXT
+                }
+            }
+        },
+        "strategy": {
+            "type": "RollingUpdate",
+            "rollingUpdate": {
+                "maxUnavailable": 1,
+                "maxSurge": 1
+            }
+        }
+    }
+}
+

@@ -1,0 +1,177 @@
+{
+    "apiVersion": "rbac.authorization.k8s.io/v1beta1",
+    "kind": "ClusterRole",
+    "metadata": {
+        "name": "prometheus-sa"
+    },
+    "rules": [
+        {
+            "apiGroups": [
+                ""
+            ],
+            "resources": [
+                "pods"
+            ],
+            "verbs": [
+                "get",
+                "list",
+                "watch"
+            ]
+        },
+        {
+            "nonResourceURLs": [
+                "/metrics"
+            ],
+            "verbs": [
+                "get",
+                "list",
+                "watch"
+            ]
+        }
+    ]
+}
+{
+    "apiVersion": "v1",
+    "kind": "ServiceAccount",
+    "metadata": {
+        "name": "prometheus-sa",
+        "namespace": "$CCP_NAMESPACE"
+    }
+}
+{
+    "apiVersion": "rbac.authorization.k8s.io/v1beta1",
+    "kind": "ClusterRoleBinding",
+    "metadata": {
+        "name": "prometheus-sa"
+    },
+    "roleRef": {
+        "apiGroup": "rbac.authorization.k8s.io",
+        "kind": "ClusterRole",
+        "name": "prometheus-sa"
+    },
+    "subjects": [
+        {
+            "kind": "ServiceAccount",
+            "name": "prometheus-sa",
+            "namespace": "$CCP_NAMESPACE"
+        }
+    ]
+}
+{
+    "kind": "Service",
+    "apiVersion": "v1",
+    "metadata": {
+        "name": "metrics",
+        "labels": {
+            "name": "metrics"
+        }
+    },
+    "spec": {
+        "ports": [
+            {
+                "name": "prometheus",
+                "protocol": "TCP",
+                "port": 9090,
+                "targetPort": 9090,
+                "nodePort": 30002
+            },
+            {
+                "name": "grafana",
+                "protocol": "TCP",
+                "port": 3000,
+                "targetPort": 3000,
+                "nodePort": 30001
+            }
+        ],
+        "selector": {
+            "name": "metrics"
+        },
+        "type": "NodePort",
+        "sessionAffinity": "None"
+    }
+}
+{
+    "kind": "Pod",
+    "apiVersion": "v1",
+    "metadata": {
+        "name": "metrics",
+        "labels": {
+            "name": "metrics"
+        }
+    },
+    "spec": {
+        "serviceAccountName": "prometheus-sa",
+        "securityContext": {
+            $CCP_SECURITY_CONTEXT
+        },
+        "containers": [
+            {
+                "name": "prometheus",
+                "image": "$CCP_IMAGE_PREFIX/crunchy-prometheus:$CCP_IMAGE_TAG",
+                "ports": [
+                    {
+                        "containerPort": 9090,
+                        "protocol": "TCP"
+                    }
+                ],
+                "env": [],
+                "volumeMounts": [
+                    {
+                        "mountPath": "/data",
+                        "name": "prometheusdata",
+                        "readOnly": false
+                    }
+                ]
+            },
+            {
+                "name": "grafana",
+                "image": "$CCP_IMAGE_PREFIX/crunchy-grafana:$CCP_IMAGE_TAG",
+                "ports": [
+                    {
+                        "containerPort": 3000,
+                        "protocol": "TCP"
+                    }
+                ],
+                "env": [
+                    {
+                        "name": "ADMIN_USER",
+                        "value": "admin"
+                    },
+                    {
+                        "name": "ADMIN_PASS",
+                        "value": "password"
+                    },
+                    {
+                        "name": "PROM_HOST",
+                        "value": "metrics"
+                    },
+                    {
+                        "name": "PROM_PORT",
+                        "value": "9090"
+                    }
+                ],
+                "volumeMounts": [
+                    {
+                        "mountPath": "/data",
+                        "name": "grafanadata",
+                        "readOnly": false
+                    }
+                ]
+            }
+        ],
+        "volumes": [
+            {
+                "name": "prometheusdata",
+                "persistentVolumeClaim": {
+                    "claimName": "metrics-prometheusdata"
+                }
+            },
+            {
+                "name": "grafanadata",
+                "persistentVolumeClaim": {
+                    "claimName": "metrics-grafanadata"
+                }
+            }
+        ]
+    }
+}
